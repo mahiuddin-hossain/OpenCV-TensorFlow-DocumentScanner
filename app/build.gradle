@@ -19,11 +19,18 @@ android {
         }
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        externalNativeBuild {
+            cmake {
+                arguments "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384", "-DCMAKE_CXX_FLAGS=-O2 -fvisibility=hidden"
+            }
+        }
     }
 
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -39,18 +46,19 @@ android {
             version "3.22.1+"
         }
     }
-    packagingOptions {
+    packaging {
         jniLibs {
-            excludes += ['**/lib/**/x86/**', '**/lib/**/x86_64/**']
+            useLegacyPackaging = false
+            excludes.add('**/lib/**/x86/**')
+            excludes.add('**/lib/**/x86_64/**')
+
+
         }
         resources {
-            excludes += ['**/lib/**/x86/**', '**/lib/**/x86_64/**']
+            excludes.add('**/lib/**/x86/**')
+            excludes.add('**/lib/**/x86_64/**')
         }
     }
-
-    // ★ x86 এর জন্য C/C++ configure skip করো
-
-
 }
 
 dependencies {
@@ -63,9 +71,9 @@ dependencies {
     androidTestImplementation libs.espresso.core
     androidTestImplementation libs.ext.junit
 
-    // ★ TensorFlow Lite — Latest Stable (2.16.1)
+    // ★ আপডেটেড TFLite (২.১৬.১ - এতে ১৬KB অ্যালাইনমেন্ট বিল্ট-ইন আছে)
     implementation 'org.tensorflow:tensorflow-lite:2.16.1'
-    implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
     implementation 'org.tensorflow:tensorflow-lite-gpu:2.16.1'
     implementation 'org.tensorflow:tensorflow-lite-gpu-api:2.16.1'
+    implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
 }

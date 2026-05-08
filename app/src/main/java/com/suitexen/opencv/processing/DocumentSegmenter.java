@@ -11,6 +11,8 @@ import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 import org.tensorflow.lite.Interpreter;
+import org.tensorflow.lite.gpu.GpuDelegate;
+import org.tensorflow.lite.nnapi.NnApiDelegate;
 
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -29,6 +31,10 @@ public class DocumentSegmenter {
     private boolean isInitialized = false;
     private volatile boolean isRunning = false;
 
+    // ★ GPU এবং NNAPI ডেলিগেট ভেরিয়েবল
+    private GpuDelegate gpuDelegate = null;
+    private NnApiDelegate nnApiDelegate = null;
+
     private float[][][][] inputBuffer;
     private float[][][][] outputBuffer;
     private int outputH, outputW, outputC;
@@ -36,8 +42,28 @@ public class DocumentSegmenter {
     public DocumentSegmenter(Context context) {
         try {
             MappedByteBuffer modelBuffer = loadModelFile(context, MODEL_FILE);
+
+            // ★ অ্যাডভান্সড অপশন সেটআপ (GPU -> NNAPI -> CPU অটো-ফলব্যাক)
             Interpreter.Options options = new Interpreter.Options();
-            options.setNumThreads(2);
+
+            try {
+                // প্রায়োরিটি ১: GPU ডেলিগেট চেষ্টা (সবচেয়ে ফাস্ট)
+                gpuDelegate = new GpuDelegate();
+                options.addDelegate(gpuDelegate);
+                Log.i(TAG, "✓ GPU Delegate activated (TensorFlow Lite GPU)");
+            } catch (Throwable t1) {
+                Log.w(TAG, "GPU not available, trying NNAPI: " + t1.getMessage());
+                try {
+                    // প্রায়োরিটি ২: NNAPI ডেলিগেট (ফোনের AI চিপ/NPU ব্যবহার করবে)
+                    nnApiDelegate = new NnApiDelegate();
+                    options.addDelegate(nnApiDelegate);
+                    Log.i(TAG, "✓ NNAPI Delegate activated (NPU/AI Chip)");
+                } catch (Throwable t2) {
+                    // প্রায়োরিটি ৩: CPU মাল্টি-থ্রেডেড (ফলব্যাক)
+                    options.setNumThreads(4);
+                    Log.w(TAG, "⚠ GPU/NNAPI failed, using Multi-threaded CPU (4 threads)");
+                }
+            }
 
             tflite = new Interpreter(modelBuffer, options);
 
@@ -74,7 +100,7 @@ public class DocumentSegmenter {
             int origW = rgbaFrame.width();
             int origH = rgbaFrame.height();
 
-            // ★ ফিক্স: স্কোয়ার না করে আসল অনুপাত (Aspect Ratio) বজায় রাখা
+            // ★ Aspect Ratio Maintain
             float scale = (float) INPUT_SIZE / Math.max(origW, origH);
             int newW = Math.round(origW * scale);
             int newH = Math.round(origH * scale);
@@ -137,7 +163,7 @@ public class DocumentSegmenter {
                 }
             }
 
-            // ★ প্যাডিং কেটে বাদ দেওয়া
+            // ★ প্যাডিং রিমুভ করা
             float maskScaleX = (float) outputW / INPUT_SIZE;
             float maskScaleY = (float) outputH / INPUT_SIZE;
 
@@ -157,6 +183,7 @@ public class DocumentSegmenter {
             }
 
             Mat croppedMask = new Mat(mask, new Rect(maskPadX, maskPadY, maskNewW, maskNewH));
+
             Mat resizedMask = new Mat();
             Imgproc.resize(croppedMask, resizedMask, new Size(origW, origH), 0, 0, Imgproc.INTER_NEAREST);
             Imgproc.threshold(resizedMask, resizedMask, 128, 255, Imgproc.THRESH_BINARY);
@@ -179,6 +206,14 @@ public class DocumentSegmenter {
     }
 
     public void release() {
+        if (gpuDelegate != null) {
+            gpuDelegate.close();
+            gpuDelegate = null;
+        }
+        if (nnApiDelegate != null) {
+            nnApiDelegate.close();
+            nnApiDelegate = null;
+        }
         if (tflite != null) {
             tflite.close();
             tflite = null;

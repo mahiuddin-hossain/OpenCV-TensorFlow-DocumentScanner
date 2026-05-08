@@ -113,7 +113,7 @@ android {
 
         externalNativeBuild {
             cmake {
-                arguments "-DANDROID_STL=c++_shared"
+                arguments "-DANDROID_STL=c++_shared", "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384", "-DCMAKE_CXX_FLAGS=-O2 -fvisibility=hidden"
                 targets "opencv_jni_shared"
             }
         }
@@ -143,6 +143,7 @@ android {
     packaging {
         jniLibs {
             keepDebugSymbols += ['**/*.so']
+            useLegacyPackaging = false
         }
     }
 
